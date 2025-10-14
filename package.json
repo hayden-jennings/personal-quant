@@ -1,0 +1,14 @@
+{
+  "name": "personal-quant",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "yarn workspace web dev",
+    "build": "yarn workspace web build",
+    "preview": "yarn workspace web preview",
+    "typecheck": "yarn workspaces foreach -v run typecheck"
+  }
+}
