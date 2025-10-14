@@ -98,14 +98,37 @@ app.get("/api/stocks/news", async (req, res) => {
   res.status(r.status).json(j);
 });
 
-app.get("/api/stocks/prev", async (req, res) => {
-  const { ticker } = req.query as Record<string, string>;
-  if (!ticker) return res.status(400).json({ error: "ticker required" });
+app.get("/api/stocks/financials", async (req, res) => {
+  try {
+    const {
+      ticker,
+      limit = 4,
+      period = "quarterly",
+    } = req.query as {
+      ticker: string;
+      limit?: any;
+      period?: any;
+    };
+    if (!ticker)
+      return res
+        .status(400)
+        .json({ status: "ERROR", error: "ticker is required" });
 
-  const url = withKey(`/v2/aggs/ticker/${ticker}/prev`);
-  const r = await fetch(url);
-  const j = await r.json();
-  res.status(r.status).json(j);
+    // Polygon vX Financials (latest docs use /vX/reference/financials)
+    const url = new URL("https://api.polygon.io/vX/reference/financials");
+    url.searchParams.set("ticker", ticker.toUpperCase());
+    url.searchParams.set("timeframe", period); // "quarterly" | "annual"
+    url.searchParams.set("limit", String(limit));
+    url.searchParams.set("order", "desc");
+    url.searchParams.set("apiKey", process.env.POLYGON_API_KEY!);
+
+    const r = await fetch(url);
+    const json = await r.json();
+    return res.json(json);
+  } catch (e: any) {
+    console.error(e);
+    res.status(500).json({ status: "ERROR", error: e?.message || "failed" });
+  }
 });
 
 app.listen(PORT, () => {
