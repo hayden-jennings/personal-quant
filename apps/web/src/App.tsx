@@ -2,7 +2,13 @@ import React, { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { PriceHistoryChart } from "./components/PriceHistoryChart";
 import { generateMockCandles, toLine, type LinePoint } from "./lib/timeSeries";
-import { getAggregates, getDetails, getNews } from "./services/polygon";
+import {
+  getAggregates,
+  getDetailsNormalized,
+  getNewsNormalized,
+  getPreviousDay,
+} from "./services/polygon";
+import type { TickerDetails as PolyDetails } from "./services/polygon";
 
 /**
  * personal-quant — Single Page App wireframe (mocked data)
@@ -96,36 +102,109 @@ export default function PersonalQuantApp() {
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [quote, setQuote] = useState<TickerQuote | null>(null);
-  const [chartData, setChartData] = useState<LinePoint[]>([]);
-  const [details, setDetails] = useState<any>(null);
-  const [news, setNews] = useState<any>(null);
+  const [chartData, setChartData] = useState<{ t: number; y: number }[]>([]);
+  const [details, setDetails] = useState<PolyDetails | null>(null);
+  const [news, setNews] = useState<any[] | null>(null);
+  const [subLoading, setSubLoading] = useState(false); // loading for live fetches after submit
+  const [yearStats, setYearStats] = useState<{
+    high: number;
+    low: number;
+  } | null>(null);
+  const [oneYearReturn, setOneYearReturn] = useState<number | null>(null);
 
   async function onSubmit(e?: React.FormEvent) {
     e?.preventDefault();
     if (!ticker.trim()) return;
     setSubmitted(true);
     setLoading(true);
-    const data = await fetchMockQuote(ticker.trim());
-    setQuote(data);
-    setLoading(false);
+    setQuote(null); // clear old/mocked quote
+    setLoading(false); // let the live calls fill in
   }
 
   useEffect(() => {
     if (!submitted || !ticker) return;
+    setSubLoading(true);
 
+    // fetch ~1Y so we can compute 52w stats; still chart only last 120
     const to = new Date();
     const from = new Date(to);
-    from.setDate(to.getDate() - 120);
+    from.setDate(to.getDate() - 365);
     const iso = (d: Date) => d.toISOString().slice(0, 10);
 
-    getAggregates(ticker, iso(from), iso(to)).then((resp) => {
-      const rows = Array.isArray(resp) ? resp : (resp?.results ?? []);
-      const line = rows.map((r: any) => ({ t: r.t ?? r.timestamp, y: r.c }));
-      setChartData(line);
-    });
+    getAggregates(ticker, iso(from), iso(to))
+      .then((resp) => {
+        const rows = Array.isArray(resp) ? resp : (resp?.results ?? []);
+        console.log("aggregates rows (1Y):", rows.length);
 
-    getDetails(ticker).then(setDetails);
-    getNews(ticker).then(setNews);
+        // 52w High/Low from highs/lows if available, else use close
+        const highs = rows.map((r: any) => r.h ?? r.c);
+        const lows = rows.map((r: any) => r.l ?? r.c);
+        const hi = Math.max(...highs);
+        const lo = Math.min(...lows);
+        setYearStats({ high: hi, low: lo });
+
+        // 1Y return (close to close)
+        if (rows.length >= 2) {
+          const firstClose = rows[0].c ?? rows[0].close ?? rows[0].o;
+          const lastClose =
+            rows[rows.length - 1].c ??
+            rows[rows.length - 1].close ??
+            rows[rows.length - 1].o;
+          if (firstClose && lastClose) {
+            setOneYearReturn(((lastClose - firstClose) / firstClose) * 100);
+          } else {
+            setOneYearReturn(null);
+          }
+        } else {
+          setOneYearReturn(null);
+        }
+
+        // Chart uses last 120 points
+        const last = rows
+          .slice(-120)
+          .map((r: any) => ({ t: r.t ?? r.timestamp, y: r.c }));
+        setChartData(last);
+      })
+      .catch((e) => console.error("aggregates error", e))
+      .finally(() => setSubLoading(false));
+
+    getDetailsNormalized(ticker)
+      .then((d) => {
+        console.log("details:", d);
+        setDetails(d);
+      })
+      .catch((e) => console.error("details error", e));
+
+    getNewsNormalized(ticker)
+      .then((n) => {
+        console.log("news:", n?.length);
+        setNews(n);
+      })
+      .catch((e) => console.error("news error", e));
+
+    getPreviousDay(ticker)
+      .then((resp) => {
+        const arr = Array.isArray(resp?.results) ? resp.results : [];
+        const bar = arr[0];
+        if (!bar) return;
+
+        const q: TickerQuote = {
+          symbol: ticker.toUpperCase(),
+          name: ticker.toUpperCase(), // details will refine later
+          price: bar.c,
+          change: bar.c - bar.o,
+          changePct: ((bar.c - bar.o) / bar.o) * 100,
+          dayHigh: bar.h,
+          dayLow: bar.l,
+          prevClose: bar.o,
+          marketCap: 0,
+          volume: bar.v,
+          currency: "USD",
+          asOf: new Date().toISOString(),
+        };
+        setQuote(q);
+      })
+      .catch((e) => console.error("prev error", e));
   }, [submitted, ticker]);
 
   // color token for up/down
@@ -236,9 +315,19 @@ export default function PersonalQuantApp() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 16 }}
             transition={{ duration: 0.4 }}
-            className="relative z-0 pt-20 pb-24"
+            className="relative z-0 pt-30 pb-24"
           >
             <div className="mx-auto max-w-6xl px-4 md:px-6 grid gap-6 md:gap-8 md:grid-cols-3">
+              {/* AI Analysis */}
+              <Card variant="outlined" className="md:col-span-3">
+                <h3 className="text-base md:text-lg font-semibold mb-1">
+                  AI analysis
+                </h3>
+                <p className="text-sm text-gray-500">
+                  Coming soon — plug in your model/agent here.
+                </p>
+              </Card>
+
               {/* LEFT COLUMN (wider) */}
               <section className="md:col-span-2 grid gap-6">
                 {/* Price card */}
@@ -253,23 +342,33 @@ export default function PersonalQuantApp() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="text-2xl md:text-3xl font-bold text-gray-900">
+                      <div className="text-2xl md:text-4xl font-bold text-gray-900 leading-none">
                         {quote ? fmt.usd(quote.price) : "—"}
                       </div>
                       <div
                         className={
-                          "text-sm " +
-                          (up ? "text-emerald-600" : "text-rose-600")
+                          "mt-1 inline-flex items-center gap-2 py-1 text-sm " +
+                          (up
+                            ? "border-emerald-200 text-emerald-700"
+                            : "border-rose-200 text-rose-700")
                         }
+                        title="Change since open"
                       >
-                        {quote
-                          ? `${fmt.usd(quote.change)} · ${fmt.pct(quote.changePct)}`
-                          : "—"}
+                        <span>{quote ? fmt.usd(quote.change) : "—"}</span>
+                        <span className="text-gray-400">·</span>
+                        <span>{quote ? fmt.pct(quote.changePct) : "—"}</span>
+                      </div>
+                      <div className="mt-1 text-xs text-gray-500">
+                        As of {quote ? fmt.time(quote.asOf) : "—"}{" "}
+                        {quote?.currency ?? ""}
                       </div>
                     </div>
                   </div>
+                  {/* Price History/Chart area */}
                   <div className="mt-4">
-                    <Sparkline loading={loading} value={quote?.price ?? 0} />
+                    <PriceHistoryChart
+                      data={chartData.length ? chartData : mockSeries}
+                    />
                   </div>
                   <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs text-gray-500">
                     <Stat
@@ -303,64 +402,133 @@ export default function PersonalQuantApp() {
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                     <KeyStat
                       label="Market Cap"
-                      value={quote ? fmt.usd(quote.marketCap) : "—"}
+                      value={
+                        details?.market_cap
+                          ? fmt.usd(details.market_cap)
+                          : quote
+                            ? fmt.usd(quote.marketCap)
+                            : "—"
+                      }
                     />
-                    <KeyStat label="52W High" value="—" muted />
-                    <KeyStat label="52W Low" value="—" muted />
+                    <KeyStat
+                      label="52W High"
+                      value={yearStats ? fmt.usd(yearStats.high) : "—"}
+                    />
+                    <KeyStat
+                      label="52W Low"
+                      value={yearStats ? fmt.usd(yearStats.low) : "—"}
+                    />
+                    <KeyStat
+                      label="1Y Return"
+                      value={
+                        oneYearReturn != null
+                          ? `${oneYearReturn >= 0 ? "+" : ""}${oneYearReturn.toFixed(2)}%`
+                          : "—"
+                      }
+                    />
+                    <KeyStat label="Avg Volume (—)" value="—" muted />
                     <KeyStat label="P/E (TTM)" value="—" muted />
-                    <KeyStat label="EPS (TTM)" value="—" muted />
-                    <KeyStat label="Dividend Yield" value="—" muted />
                   </div>
-                </Card>
-
-                {/* Placeholder: Price History/Chart area */}
-                <Card>
-                  <PriceHistoryChart
-                    data={chartData.length ? chartData : mockSeries}
-                  />
                 </Card>
               </section>
 
               {/* RIGHT COLUMN */}
-              <section className="grid gap-6">
+              <section className="flex flex-col gap-6 md:max-h-[calc(100vh-16rem)]">
                 {/* Company Profile */}
                 <Card>
                   <h3 className="text-base md:text-lg font-semibold mb-2">
                     Company profile
                   </h3>
-                  <p className="text-sm text-gray-500 leading-relaxed">
-                    {quote
-                      ? `${quote.name} engages in doing interesting things related to its sector. This is placeholder copy for a company description sourced from your data provider.`
-                      : "Enter a ticker above to load a mocked company profile."}
-                  </p>
-                  <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
-                    <KeyStat label="Currency" value={quote?.currency ?? "—"} />
-                    <KeyStat label="Exchange" value="—" muted />
-                    <KeyStat label="Sector" value="—" muted />
-                    <KeyStat label="Industry" value="—" muted />
-                  </div>
+                  {details ? (
+                    <>
+                      <p className="text-sm text-gray-500 leading-relaxed">
+                        <span className="font-medium text-gray-900">
+                          {details.name ?? quote?.name ?? "—"}
+                        </span>
+                        {details.industry ? ` · ${details.industry}` : ""}
+                        {details.primary_exchange
+                          ? ` · ${details.primary_exchange}`
+                          : ""}
+                      </p>
+
+                      <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
+                        <KeyStat label="Ticker" value={details.ticker ?? "—"} />
+                        <KeyStat
+                          label="Market Cap"
+                          value={
+                            details.market_cap
+                              ? fmt.usd(details.market_cap)
+                              : "—"
+                          }
+                        />
+                        <KeyStat
+                          label="Currency"
+                          value={
+                            details.currency_name ?? quote?.currency ?? "—"
+                          }
+                        />
+                        <KeyStat
+                          label="Website"
+                          value={
+                            details.homepage_url ? (
+                              <a
+                                href={details.homepage_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="underline"
+                              >
+                                {new URL(details.homepage_url).hostname}
+                              </a>
+                            ) : (
+                              "—"
+                            )
+                          }
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-sm text-gray-500">
+                      Loading profile…
+                    </div>
+                  )}
                 </Card>
 
                 {/* Recent News (placeholder) */}
-                <Card>
+                <Card className="flex flex-col min-h-0">
                   <h3 className="text-base md:text-lg font-semibold mb-2">
-                    Recent news (placeholder)
+                    Recent news
                   </h3>
-                  <div className="space-y-3">
-                    <NewsItem />
-                    <NewsItem />
-                    <NewsItem />
-                  </div>
-                </Card>
 
-                {/* AI Analysis placeholder */}
-                <Card variant="outlined">
-                  <h3 className="text-base md:text-lg font-semibold mb-1">
-                    AI analysis
-                  </h3>
-                  <p className="text-sm text-gray-500">
-                    Coming soon — plug in your model/agent here.
-                  </p>
+                  {!news && (
+                    <div className="text-sm text-gray-500">Loading news…</div>
+                  )}
+                  {news && news.length === 0 && (
+                    <div className="text-sm text-gray-500">
+                      No recent articles found.
+                    </div>
+                  )}
+
+                  {news && news.length > 0 && (
+                    <div className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-1">
+                      {news.slice(0, 30).map((n) => (
+                        <a
+                          key={n.id}
+                          href={n.article_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="block p-3 rounded-xl border border-dashed border-gray-300 hover:bg-gray-50"
+                        >
+                          <div className="text-sm font-medium">{n.title}</div>
+                          <div className="text-xs text-gray-500">
+                            {n.publisher ?? "—"} ·{" "}
+                            {n.published_utc
+                              ? new Date(n.published_utc).toLocaleString()
+                              : "—"}
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                  )}
                 </Card>
               </section>
             </div>
@@ -413,16 +581,18 @@ function SubmitButton({
 function Card({
   children,
   variant = "filled",
+  className = "",
 }: {
   children: React.ReactNode;
   variant?: "filled" | "outlined";
+  className?: string;
 }) {
   const base = "rounded-2xl p-4 md:p-6";
   const style =
     variant === "outlined"
       ? "border border-gray-200 bg-white/60"
       : "bg-white ring-1 ring-gray-200 shadow-xl shadow-black/5";
-  return <div className={`${base} ${style}`}>{children}</div>;
+  return <div className={`${base} ${style} ${className}`}>{children}</div>;
 }
 
 function Stat({ label, value }: { label: string; value: React.ReactNode }) {
@@ -449,46 +619,6 @@ function KeyStat({
       <div className={`text-sm ${muted ? "text-gray-500" : "text-gray-900"}`}>
         {value}
       </div>
-    </div>
-  );
-}
-
-function NewsItem() {
-  return (
-    <div className="p-3 rounded-xl border border-dashed border-gray-300">
-      <div className="text-sm font-medium">Headline goes here</div>
-      <div className="text-xs text-gray-500">Publisher · 2h ago</div>
-    </div>
-  );
-}
-
-function Sparkline({ loading, value }: { loading: boolean; value: number }) {
-  // A super simple animated sparkline placeholder
-  const points = useMemo(() => {
-    const base = Array.from(
-      { length: 24 },
-      (_, i) => 50 + Math.sin(i / 2) * 18
-    );
-    const jitter = base.map((v, i) => v + ((i * 7) % 9) - 4);
-    return jitter;
-  }, [value]);
-
-  return (
-    <div className="h-28">
-      <svg viewBox="0 0 240 80" className="w-full h-full">
-        <polyline
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          className="text-gray-400"
-          points={points
-            .map((y, i) => `${(i * 240) / (points.length - 1)},${80 - y}`)
-            .join(" ")}
-        />
-      </svg>
-      {loading && (
-        <div className="text-xs text-gray-500 mt-1">Loading mocked data…</div>
-      )}
     </div>
   );
 }

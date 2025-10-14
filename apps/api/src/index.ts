@@ -98,6 +98,16 @@ app.get("/api/stocks/news", async (req, res) => {
   res.status(r.status).json(j);
 });
 
+app.get("/api/stocks/prev", async (req, res) => {
+  const { ticker } = req.query as Record<string, string>;
+  if (!ticker) return res.status(400).json({ error: "ticker required" });
+
+  const url = withKey(`/v2/aggs/ticker/${ticker}/prev`);
+  const r = await fetch(url);
+  const j = await r.json();
+  res.status(r.status).json(j);
+});
+
 app.listen(PORT, () => {
   console.log(`API listening on http://localhost:${PORT}`);
 });
