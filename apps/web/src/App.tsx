@@ -1,5 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { PriceHistoryChart } from "./components/PriceHistoryChart";
+import { generateMockCandles, toLine } from "./lib/timeSeries";
 
 /**
  * personal-quant — Single Page App wireframe (mocked data)
@@ -12,8 +14,6 @@ import { motion, AnimatePresence } from "framer-motion";
  * - No AI analysis yet (placeholder section left for future work)
  *
  * Notes:
- * - Keep this file self-contained for easy copy/paste into a Vite React TS app.
- * - Tailwind classes assume base Tailwind setup.
  * - All data is mocked; replace fetchMockQuote with real Polygon calls later.
  */
 
@@ -108,6 +108,14 @@ export default function PersonalQuantApp() {
 
   // color token for up/down
   const up = quote && quote.change >= 0;
+
+  const mockSeries = useMemo(
+    () =>
+      toLine(
+        generateMockCandles(ticker.length ? ticker.charCodeAt(0) : 123, 120)
+      ),
+    [ticker]
+  );
 
   return (
     <div className="min-h-screen w-full bg-gray-50 text-gray-900 overflow-hidden relative">
@@ -285,12 +293,7 @@ export default function PersonalQuantApp() {
 
                 {/* Placeholder: Price History/Chart area */}
                 <Card>
-                  <h3 className="text-base md:text-lg font-semibold mb-4">
-                    Price history (placeholder)
-                  </h3>
-                  <div className="h-56 md:h-72 rounded-xl border border-dashed border-gray-300 grid place-items-center text-gray-500">
-                    Add your chart component here
-                  </div>
+                  <PriceHistoryChart data={mockSeries} />
                 </Card>
               </section>
 
