@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { PriceHistoryChart } from "./components/PriceHistoryChart";
-import { generateMockCandles, toLine } from "./lib/timeSeries";
+import { generateMockCandles, toLine, type LinePoint } from "./lib/timeSeries";
+import { getAggregates, getDetails, getNews } from "./services/polygon";
 
 /**
  * personal-quant — Single Page App wireframe (mocked data)
@@ -95,6 +96,9 @@ export default function PersonalQuantApp() {
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [quote, setQuote] = useState<TickerQuote | null>(null);
+  const [chartData, setChartData] = useState<LinePoint[]>([]);
+  const [details, setDetails] = useState<any>(null);
+  const [news, setNews] = useState<any>(null);
 
   async function onSubmit(e?: React.FormEvent) {
     e?.preventDefault();
@@ -105,6 +109,24 @@ export default function PersonalQuantApp() {
     setQuote(data);
     setLoading(false);
   }
+
+  useEffect(() => {
+    if (!submitted || !ticker) return;
+
+    const to = new Date();
+    const from = new Date(to);
+    from.setDate(to.getDate() - 120);
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+
+    getAggregates(ticker, iso(from), iso(to)).then((resp) => {
+      const rows = Array.isArray(resp) ? resp : (resp?.results ?? []);
+      const line = rows.map((r: any) => ({ t: r.t ?? r.timestamp, y: r.c }));
+      setChartData(line);
+    });
+
+    getDetails(ticker).then(setDetails);
+    getNews(ticker).then(setNews);
+  }, [submitted, ticker]);
 
   // color token for up/down
   const up = quote && quote.change >= 0;
@@ -293,7 +315,9 @@ export default function PersonalQuantApp() {
 
                 {/* Placeholder: Price History/Chart area */}
                 <Card>
-                  <PriceHistoryChart data={mockSeries} />
+                  <PriceHistoryChart
+                    data={chartData.length ? chartData : mockSeries}
+                  />
                 </Card>
               </section>
 
@@ -363,7 +387,7 @@ function TickerInput({
       placeholder="Enter ticker (e.g., AAPL)"
       value={value}
       onChange={(e) => onChange(e.target.value.toUpperCase())}
-      className="w-full flex-1 rounded-xl bg-white border border-gray-300 px-4 py-3 text-gray-900 placeholder:text-gray-400 outline-none ring-0 focus:border-slate-500"
+      className="w-full flex-1 rounded-xl bg-white border border-gray-300 px-4 py-3 text-gray-900 placeholder:text-gray-400 outline-none ring-0 focus:border-gray-500"
     />
   );
 }

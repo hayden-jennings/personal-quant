@@ -1,13 +1,13 @@
 {
-  "name": "personal-quant",
   "private": true,
+  "name": "personal-quant",
+  "version": "0.0.0",
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
-  "version": "1.0.0",
-  "main": "index.js",
-  "repository": "https://hayden955@github.com/hayden-jennings/personal-quant.git",
-  "author": "Hayden Jennings <haydensj@bu.edu>",
-  "license": "MIT"
+  "scripts": {
+    "dev:web": "yarn --cwd apps/web dev",
+    "dev:api": "yarn --cwd apps/api dev"
+  }
 }
