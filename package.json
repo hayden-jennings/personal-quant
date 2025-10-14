@@ -5,10 +5,9 @@
     "apps/*",
     "packages/*"
   ],
-  "scripts": {
-    "dev": "yarn workspace web dev",
-    "build": "yarn workspace web build",
-    "preview": "yarn workspace web preview",
-    "typecheck": "yarn workspaces foreach -v run typecheck"
-  }
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": "https://hayden955@github.com/hayden-jennings/personal-quant.git",
+  "author": "Hayden Jennings <haydensj@bu.edu>",
+  "license": "MIT"
 }
