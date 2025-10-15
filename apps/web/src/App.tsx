@@ -179,7 +179,7 @@ export default function PersonalQuantApp() {
   return (
     <div className="min-h-screen w-full bg-gray-50 text-gray-900 overflow-hidden relative">
       {/* background grid */}
-      <div className="pointer-events-none absolute inset-0 [mask-image:radial-gradient(ellipse_at_center,white,transparent_70%)]">
+      <div className="pointer-events-none absolute inset-0 [mask-image:radial-gradient(ellipse_at_center,white,transparent_80%)]">
         <GridBackdrop />
       </div>
 
