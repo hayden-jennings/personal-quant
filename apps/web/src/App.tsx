@@ -7,6 +7,7 @@ import {
   getDetailsNormalized,
   getNewsNormalized,
   getPreviousDay,
+  logoUrlFor,
 } from "./services/polygon";
 import type { TickerDetails as PolyDetails } from "./services/polygon";
 
@@ -129,7 +130,6 @@ export default function PersonalQuantApp() {
         // Chart uses last ~120 points
         const all = rows.map((r: any) => ({ t: r.t ?? r.timestamp, y: r.c }));
         setChartData(all);
-        
       } catch {
         setYearStats(null);
         setOneYearReturn(null);
@@ -289,12 +289,27 @@ export default function PersonalQuantApp() {
                 {/* Price card */}
                 <Card>
                   <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <div className="text-sm text-gray-500">
-                        {quote ? quote.symbol : "TICKER"}
-                      </div>
-                      <div className="text-xl md:text-2xl font-semibold">
-                        {quote ? quote.name : "—"}
+                    <div className="flex items-center gap-3">
+                      {ticker ? (
+                        <img
+                          src={logoUrlFor(ticker)}
+                          alt={`${details?.name ?? ticker} logo`}
+                          className="h-8 w-8 object-contain"
+                          onError={(e) => {
+                            (
+                              e.currentTarget as HTMLImageElement
+                            ).style.display = "none";
+                          }}
+                        />
+                      ) : null}
+
+                      <div>
+                        <div className="text-sm text-gray-500">
+                          {quote ? quote.symbol : "TICKER"}
+                        </div>
+                        <div className="text-xl md:text-2xl font-semibold">
+                          {quote ? quote.name : "—"}
+                        </div>
                       </div>
                     </div>
                     <div className="text-right">

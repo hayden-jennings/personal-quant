@@ -98,36 +98,48 @@ app.get("/api/stocks/news", async (req, res) => {
   res.status(r.status).json(j);
 });
 
-app.get("/api/stocks/financials", async (req, res) => {
+/** Company Logo — via /v3/reference/tickers/{ticker} then fetch branding.logo_url */
+app.get("/api/stocks/logo", async (req, res) => {
+  const { ticker } = req.query as Record<string, string>;
+  if (!ticker) return res.status(400).json({ error: "ticker required" });
+  if (!KEY) return res.status(500).json({ error: "missing POLYGON_API_KEY" });
+
   try {
-    const {
-      ticker,
-      limit = 4,
-      period = "quarterly",
-    } = req.query as {
-      ticker: string;
-      limit?: any;
-      period?: any;
-    };
-    if (!ticker)
-      return res
-        .status(400)
-        .json({ status: "ERROR", error: "ticker is required" });
+    // Get details to find branding.logo_url
+    const detailsUrl = withKey(`/v3/reference/tickers/${ticker}`);
+    const detailsResp = await fetch(detailsUrl);
+    if (!detailsResp.ok) {
+      const body = await detailsResp.text();
+      return res.status(detailsResp.status).send(body);
+    }
+    const details = await detailsResp.json();
+    let logoUrl: string | undefined = details?.results?.branding?.logo_url;
+    if (!logoUrl) {
+      return res.status(404).json({ error: "logo not found in details" });
+    }
 
-    // Polygon vX Financials (latest docs use /vX/reference/financials)
-    const url = new URL("https://api.polygon.io/vX/reference/financials");
-    url.searchParams.set("ticker", ticker.toUpperCase());
-    url.searchParams.set("timeframe", period); // "quarterly" | "annual"
-    url.searchParams.set("limit", String(limit));
-    url.searchParams.set("order", "desc");
-    url.searchParams.set("apiKey", process.env.POLYGON_API_KEY!);
+    // Ensure apiKey is present on the logo URL itself
+    const hasQuery = logoUrl.includes("?");
+    const hasKey = /(?:\?|&)apiKey=/.test(logoUrl);
+    if (!hasKey) {
+      logoUrl =
+        logoUrl + (hasQuery ? "&" : "?") + `apiKey=${encodeURIComponent(KEY!)}`;
+    }
 
-    const r = await fetch(url);
-    const json = await r.json();
-    return res.json(json);
-  } catch (e: any) {
-    console.error(e);
-    res.status(500).json({ status: "ERROR", error: e?.message || "failed" });
+    // Fetch the image and forward it with correct headers
+    const imgResp = await fetch(logoUrl);
+    if (!imgResp.ok) {
+      return res.status(imgResp.status).json({ error: "failed to fetch logo" });
+    }
+    const ct = imgResp.headers.get("content-type") ?? "image/svg+xml";
+    const buf = Buffer.from(await imgResp.arrayBuffer());
+
+    res.set("Content-Type", ct);
+    res.set("Cache-Control", "public, max-age=3600");
+    res.status(200).send(buf);
+  } catch (err: any) {
+    console.error("logo error", err);
+    res.status(500).json({ error: "unexpected error" });
   }
 });
 

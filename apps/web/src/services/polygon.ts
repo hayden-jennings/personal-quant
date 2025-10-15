@@ -15,6 +15,7 @@ export type TickerDetails = {
   primary_exchange?: string;
   industry?: string;
   homepage_url?: string;
+  branding_logo?: string;
 };
 export type NewsItem = {
   id: string;
@@ -24,7 +25,11 @@ export type NewsItem = {
   article_url?: string;
 };
 
-const API_BASE = "http://localhost:8787";
+export const API_BASE = "http://localhost:8787";
+
+export const logoUrlFor = (ticker: string) =>
+  `${API_BASE}/api/stocks/logo?ticker=${encodeURIComponent(ticker)}`;
+
 const API = (
   path: string,
   params?: Record<string, string | number | boolean>
@@ -61,6 +66,7 @@ export async function getDetailsNormalized(ticker: string) {
     primary_exchange: r?.primary_exchange ?? r?.primary_exchange_symbol,
     industry: r?.industry ?? r?.sic_description,
     homepage_url: r?.homepage_url,
+    branding_logo: r?.branding?.logo_url,
   } as TickerDetails;
 }
 export async function getNews(ticker?: string) {
