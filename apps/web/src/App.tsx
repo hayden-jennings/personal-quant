@@ -84,7 +84,7 @@ export default function PersonalQuantApp() {
 
     const to = new Date();
     const from = new Date(to);
-    from.setDate(to.getDate() - 365);
+    from.setDate(to.getDate() - 365 * 2);
     const iso = (d: Date) => d.toISOString().slice(0, 10);
 
     // Fetch aggregates first (drives chart + stats)
@@ -127,9 +127,9 @@ export default function PersonalQuantApp() {
         );
 
         // Chart uses last ~120 points
-        setChartData(
-          rows.slice(-120).map((r) => ({ t: r.t ?? r.timestamp, y: r.c }))
-        );
+        const all = rows.map((r: any) => ({ t: r.t ?? r.timestamp, y: r.c }));
+        setChartData(all);
+        
       } catch {
         setYearStats(null);
         setOneYearReturn(null);
@@ -320,7 +320,7 @@ export default function PersonalQuantApp() {
                   </div>
 
                   {/* Chart */}
-                  <div className="mt-4">
+                  <div className="mb-15 mt-3">
                     {chartData.length ? (
                       <PriceHistoryChart data={chartData} />
                     ) : (
