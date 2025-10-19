@@ -1,6 +1,6 @@
 {
   "private": true,
-  "name": "personal-quant",
+  "name": "stock-search",
   "version": "0.0.0",
   "workspaces": [
     "apps/*",

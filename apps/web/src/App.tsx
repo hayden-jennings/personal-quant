@@ -10,8 +10,9 @@ import {
   logoUrlFor,
 } from "./services/polygon";
 import type { TickerDetails as PolyDetails } from "./services/polygon";
+import search from "./assets/search.svg";
 
-/** personal-quant — Single Page App */
+/** stock-search — Single Page App */
 
 // ---- types ----
 export type TickerQuote = {
@@ -54,7 +55,7 @@ const fmt = {
 };
 
 // ---- main SPA component ----
-export default function PersonalQuantApp() {
+export default function StockSearchApp() {
   const [ticker, setTicker] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -72,8 +73,10 @@ export default function PersonalQuantApp() {
   const [avgVolume, setAvgVolume] = useState<number | null>(null);
 
   function onSubmit(e?: React.FormEvent) {
+    console.log("Submit", ticker, e);
     e?.preventDefault();
     if (!ticker.trim()) return;
+    console.log("Submitted", submitted);
     setSubmitted(true);
     setLoading(true);
     setQuote(null);
@@ -82,7 +85,7 @@ export default function PersonalQuantApp() {
 
   useEffect(() => {
     if (!submitted || !ticker) return;
-
+    console.log("Fetching data for", ticker);
     const to = new Date();
     const from = new Date(to);
     from.setDate(to.getDate() - 365 * 2);
@@ -172,12 +175,12 @@ export default function PersonalQuantApp() {
         }
       }
     })();
-  }, [submitted, ticker]);
+  }, [submitted]);
 
   const up = !!quote && quote.change >= 0;
 
   return (
-    <div className="min-h-screen w-full bg-gray-50 text-gray-900 overflow-hidden relative">
+    <div className="min-h-screen w-full bg-gray-100 text-gray-900 overflow-hidden relative">
       {/* background grid */}
       <div className="pointer-events-none absolute inset-0 [mask-image:radial-gradient(ellipse_at_center,white,transparent_80%)]">
         <GridBackdrop />
@@ -190,14 +193,15 @@ export default function PersonalQuantApp() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute top-0 left-0 right-0 h-16 bg-white/70 backdrop-blur"
+            // was: "absolute top-0 left-0 right-0 h-16 ..."
+            className="fixed top-0 left-0 right-0 z-50 h-16 bg-white/70 backdrop-blur supports-[backdrop-filter]:bg-white/60"
           >
-            <div className="h-full flex items-center justify-between px-4 md:px-6">
+            <div className="h-full flex items-center justify-between px-4 md:px-6 pointer-events-auto">
               <motion.h1
                 layoutId="title"
                 className="text-lg md:text-xl font-semibold tracking-tight text-gray-900"
               >
-                personal-quant
+                stock.ai
               </motion.h1>
 
               <motion.form
@@ -206,7 +210,7 @@ export default function PersonalQuantApp() {
                 className="flex gap-2 items-center"
               >
                 <TickerInput value={ticker} onChange={setTicker} />
-                <SubmitButton loading={loading} label="Analyze" />
+                <SubmitButton loading={loading} />
               </motion.form>
             </div>
           </motion.div>
@@ -237,16 +241,16 @@ export default function PersonalQuantApp() {
                     layoutId="title"
                     className="text-4xl md:text-6xl font-bold tracking-tight text-gray-900"
                   >
-                    personal-quant
+                    stock.ai
                   </motion.h1>
                   <p className="mt-3 text-sm md:text-base text-gray-500">
-                    Your single-page AI stock assistant
+                    Your AI stock assistant
                   </p>
 
                   <motion.form
                     layoutId="search"
                     onSubmit={onSubmit}
-                    className="mt-8 mx-auto flex w-full max-w-xl items-center gap-2"
+                    className="relative isolate mt-8 mx-auto flex w-full max-w-xl items-center gap-2 z-0"
                   >
                     <TickerInput
                       value={ticker}
@@ -523,28 +527,50 @@ function TickerInput({
   return (
     <input
       autoFocus={autoFocus}
-      placeholder="Enter ticker (e.g., AAPL)"
+      placeholder="Find company..."
       value={value}
       onChange={(e) => onChange(e.target.value.toUpperCase())}
-      className="w-full flex-1 rounded-xl bg-white border border-gray-300 px-4 py-3 text-gray-900 placeholder:text-gray-400 outline-none ring-0 focus:border-gray-500"
+      className={`
+        relative z-10 w-full flex-1 rounded-xl
+        bg-white/20 backdrop-blur-md
+        border border-white/40
+        text-gray-900 text-gray-400
+        px-4 py-3
+        shadow-xl shadow-black/20
+        transition-all duration-300
+        focus:bg-white/50 focus:border-white/100
+        outline-none
+      `}
     />
   );
 }
 
-function SubmitButton({
-  loading,
-  label = "Go",
-}: {
-  loading: boolean;
-  label?: string;
-}) {
+function SubmitButton({ loading }: { loading: boolean }) {
   return (
     <button
       type="submit"
       disabled={loading}
-      className="rounded-xl px-5 py-3 bg-gray-900 hover:bg-gray-800 disabled:opacity-50 text-white font-semibold shadow-md"
+      className={`
+        relative z-9 flex items-center justify-center
+        w-12 h-12 rounded-xl
+        backdrop-blur-md bg-white/20
+        border border-white/40
+        shadow-[0_10px_25px_rgba(0,0,0,0.3)]
+        transition-all duration-300
+        hover:bg-white/50 hover:scale-105 hover:shadow-[0_12px_30px_rgba(0,0,0,0.4)]
+        active:scale-95
+        disabled:opacity-50 disabled:cursor-not-allowed
+      `}
     >
-      {loading ? "Loading…" : label}
+      {loading ? (
+        <span className="text-xs text-gray-300 animate-pulse">Loading…</span>
+      ) : (
+        <img
+          src={search}
+          alt="Search"
+          className="w-6 h-6 opacity-90 transition-opacity"
+        />
+      )}
     </button>
   );
 }
@@ -602,7 +628,8 @@ function GridBackdrop() {
           <path
             d="M 32 0 L 0 0 0 32"
             fill="none"
-            stroke="rgb(209 213 219 / 0.7)"
+            stroke="gray"
+            strokeOpacity="0.3"
             strokeWidth="1"
           />
         </pattern>
