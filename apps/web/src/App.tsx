@@ -297,10 +297,10 @@ export default function StockSearchApp() {
                 <Card>
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex items-center gap-3">
-                      {ticker ? (
+                      {symbol ? (
                         <img
                           src={symbol ? logoUrlFor(symbol) : undefined}
-                          alt={`${details?.name ?? symbol ?? ticker} logo`}
+                          alt={`${details?.name ?? symbol ?? ""} logo`}
                           className="h-8 w-8 object-contain"
                           onError={(e) => {
                             (
@@ -312,10 +312,10 @@ export default function StockSearchApp() {
 
                       <div>
                         <div className="text-sm text-gray-500">
-                          {quote ? quote.symbol : (symbol ?? "TICKER")}
+                          {symbol ?? "TICKER"}
                         </div>
                         <div className="text-xl md:text-2xl font-semibold">
-                          {quote ? quote.name : "—"}
+                          {details?.name ?? symbol ?? "—"}
                         </div>
                       </div>
                     </div>
@@ -425,7 +425,7 @@ export default function StockSearchApp() {
                     <>
                       <p className="text-sm text-gray-500 leading-relaxed">
                         <span className="font-medium text-gray-900">
-                          {details.name ?? quote?.name ?? "—"}
+                          {details.name ?? symbol ?? "—"}
                         </span>
                         {details.industry ? ` · ${details.industry}` : ""}
                         {details.primary_exchange
