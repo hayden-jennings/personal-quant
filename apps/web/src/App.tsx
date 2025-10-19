@@ -57,9 +57,9 @@ const fmt = {
 // ---- main SPA component ----
 export default function StockSearchApp() {
   const [ticker, setTicker] = useState("");
+  const [symbol, setSymbol] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
-
   const [quote, setQuote] = useState<TickerQuote | null>(null);
   const [chartData, setChartData] = useState<{ t: number; y: number }[]>([]);
   const [details, setDetails] = useState<PolyDetails | null>(null);
@@ -75,53 +75,54 @@ export default function StockSearchApp() {
   function onSubmit(e?: React.FormEvent) {
     console.log("Submit", ticker, e);
     e?.preventDefault();
-    if (!ticker.trim()) return;
-    console.log("Submitted", submitted);
+    const nextTicker = ticker.trim().toUpperCase();
+    if (!nextTicker) return;
     setSubmitted(true);
-    setLoading(true);
-    setQuote(null);
-    setLoading(false);
+    setSymbol(nextTicker);
   }
 
   useEffect(() => {
-    if (!submitted || !ticker) return;
-    console.log("Fetching data for", ticker);
+    const sym = symbol;
+    if (!sym) return;
+
+    setLoading(true);
+    setQuote(null);
+    setDetails(null);
+    setNews(null);
+    setYearStats(null);
+    setOneYearReturn(null);
+    setAvgVolume(null);
+    setChartData([]);
+
     const to = new Date();
     const from = new Date(to);
     from.setDate(to.getDate() - 365 * 2);
     const iso = (d: Date) => d.toISOString().slice(0, 10);
 
-    // Fetch aggregates first (drives chart + stats)
+    // Fetch aggregates first (chart + stats)
     (async () => {
       try {
-        const aggResp = await getAggregates(ticker, iso(from), iso(to));
+        const aggResp = await getAggregates(sym, iso(from), iso(to));
         const rows: any[] = Array.isArray(aggResp)
           ? aggResp
           : (aggResp?.results ?? []);
 
-        // 52W high/low (prefer H/L, fallback close)
         const highs = rows.map((r) => r.h ?? r.c);
         const lows = rows.map((r) => r.l ?? r.c);
         if (highs.length && lows.length) {
           setYearStats({ high: Math.max(...highs), low: Math.min(...lows) });
-        } else {
-          setYearStats(null);
         }
 
-        // 1Y return (close to close)
         if (rows.length >= 2) {
           const firstClose = rows[0].c ?? rows[0].o;
-          const lastClose = rows[rows.length - 1].c ?? rows[rows.length - 1].o;
+          const lastClose = rows.at(-1).c ?? rows.at(-1).o;
           setOneYearReturn(
             firstClose && lastClose
               ? ((lastClose - firstClose) / firstClose) * 100
               : null
           );
-        } else {
-          setOneYearReturn(null);
         }
 
-        // Avg Volume (last 90 bars)
         const vols = rows.map((r) => Number(r.v) || 0);
         const last90 = vols.slice(-90);
         setAvgVolume(
@@ -130,7 +131,6 @@ export default function StockSearchApp() {
             : null
         );
 
-        // Chart uses last ~120 points
         const all = rows.map((r: any) => ({ t: r.t ?? r.timestamp, y: r.c }));
         setChartData(all);
       } catch {
@@ -143,39 +143,42 @@ export default function StockSearchApp() {
 
     // Fetch remaining in parallel
     (async () => {
-      const [detailsRes, newsRes, prevRes] = await Promise.allSettled([
-        getDetailsNormalized(ticker),
-        getNewsNormalized(ticker),
-        getPreviousDay(ticker),
-      ]);
+      try {
+        const [detailsRes, newsRes, prevRes] = await Promise.allSettled([
+          getDetailsNormalized(sym),
+          getNewsNormalized(sym),
+          getPreviousDay(sym),
+        ]);
 
-      if (detailsRes.status === "fulfilled") setDetails(detailsRes.value);
-      if (newsRes.status === "fulfilled") setNews(newsRes.value);
+        if (detailsRes.status === "fulfilled") setDetails(detailsRes.value);
+        if (newsRes.status === "fulfilled") setNews(newsRes.value);
 
-      if (prevRes.status === "fulfilled") {
-        const bar = Array.isArray(prevRes.value?.results)
-          ? prevRes.value.results[0]
-          : undefined;
-        if (bar) {
-          setQuote({
-            symbol: ticker.toUpperCase(),
-            name: ticker.toUpperCase(), // details may refine this later
-            price: bar.c,
-            change: bar.c - bar.o,
-            changePct: ((bar.c - bar.o) / bar.o) * 100,
-            dayHigh: bar.h,
-            dayLow: bar.l,
-            prevClose: bar.o,
-            marketCap: 0,
-            volume: bar.v,
-            currency: "USD",
-            asOf: new Date().toISOString(),
-          });
-          console.log("Set quote from prev day", ticker, bar);
+        if (prevRes.status === "fulfilled") {
+          const bar = Array.isArray(prevRes.value?.results)
+            ? prevRes.value.results[0]
+            : undefined;
+          if (bar) {
+            setQuote({
+              symbol: sym,
+              name: sym, // details may refine later
+              price: bar.c,
+              change: bar.c - bar.o,
+              changePct: ((bar.c - bar.o) / bar.o) * 100,
+              dayHigh: bar.h,
+              dayLow: bar.l,
+              prevClose: bar.o,
+              marketCap: 0,
+              volume: bar.v,
+              currency: "USD",
+              asOf: new Date().toISOString(),
+            });
+          }
         }
+      } finally {
+        setLoading(false);
       }
     })();
-  }, [submitted]);
+  }, [symbol]);
 
   const up = !!quote && quote.change >= 0;
 
@@ -296,8 +299,8 @@ export default function StockSearchApp() {
                     <div className="flex items-center gap-3">
                       {ticker ? (
                         <img
-                          src={logoUrlFor(ticker)}
-                          alt={`${details?.name ?? ticker} logo`}
+                          src={symbol ? logoUrlFor(symbol) : undefined}
+                          alt={`${details?.name ?? symbol ?? ticker} logo`}
                           className="h-8 w-8 object-contain"
                           onError={(e) => {
                             (
@@ -309,7 +312,7 @@ export default function StockSearchApp() {
 
                       <div>
                         <div className="text-sm text-gray-500">
-                          {quote ? quote.symbol : "TICKER"}
+                          {quote ? quote.symbol : (symbol ?? "TICKER")}
                         </div>
                         <div className="text-xl md:text-2xl font-semibold">
                           {quote ? quote.name : "—"}
@@ -624,9 +627,9 @@ function GridBackdrop() {
   return (
     <svg className="absolute inset-0 w-full h-full" aria-hidden>
       <defs>
-        <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+        <pattern id="grid" width="38" height="38" patternUnits="userSpaceOnUse">
           <path
-            d="M 32 0 L 0 0 0 32"
+            d="M 38 0 L 0 0 0 38"
             fill="none"
             stroke="gray"
             strokeOpacity="0.3"
