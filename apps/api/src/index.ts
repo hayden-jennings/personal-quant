@@ -6,6 +6,9 @@ const app = express();
 const PORT = process.env.PORT || 8787;
 
 app.use(cors());
+app.use(express.json());
+
+// Health check
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
 const POLY_BASE = "https://api.polygon.io";
@@ -140,6 +143,119 @@ app.get("/api/stocks/logo", async (req, res) => {
   } catch (err: any) {
     console.error("logo error", err);
     res.status(500).json({ error: "unexpected error" });
+  }
+});
+
+app.post("/api/ai/analyze", async (req, res) => {
+  try {
+    const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+    if (!OPENAI_API_KEY) {
+      return res
+        .status(503)
+        .json({ ok: false, error: "Missing OPENAI_API_KEY on server" });
+    }
+
+    const raw = (req.body ?? {}) as any;
+    const trimmed = {
+      ...raw,
+      series: raw?.series
+        ? {
+            ...raw.series,
+            points: Array.isArray(raw.series.points)
+              ? raw.series.points.slice(-300)
+              : [],
+          }
+        : undefined,
+    };
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15_000);
+
+    const prompt = [
+      {
+        role: "system",
+        content:
+          "You are a cautious, concise-but-thorough equities analyst. Provide clear caveats, quantify when possible, avoid certainty.",
+      },
+      {
+        role: "user",
+        content: `Analyze the following stock snapshot and return structured JSON.
+        Required:
+        - stance: "bullish" | "bearish" | "neutral"
+        - confidence: number (0..1)
+        - summary: 3-5 sentences
+        - highlights: string[]
+        - technical: { supports: string[], resistances: string[], signals: { name: string, status: string }[] }
+        - actions: string[] (1–5 bullets)
+        - risks: string[] (1–5 bullets)
+        - horizon: string
+        - disclaimers: string[]
+
+        Optional (include when useful to justify actions financially):
+        - rationale_long: string[] (2–6 short paragraphs; plain text, no markdown)
+        - scenarios: {
+            bull?: { prob?: number (0..1), target?: string, drivers?: string[] },
+            base?: { prob?: number, target?: string, drivers?: string[] },
+            bear?: { prob?: number, target?: string, drivers?: string[] }
+          }
+        - valuation: {
+            multiples?: { name: string, value: string, peer_range?: string }[],
+            notes?: string[]
+          }
+        - playbook?: {
+            entry?: string, exits?: string[], invalidation?: string,
+            position?: string, timeframe?: string
+          }
+        - watchlist?: string[]  // signals/events to monitor
+        - confidence_notes?: string[]
+        - data_used?: string[]  // what key inputs you used
+
+        Snapshot JSON:
+        ${JSON.stringify(trimmed)}`,
+      },
+    ];
+
+    const r = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: prompt,
+        temperature: 0.2,
+        response_format: { type: "json_object" },
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    if (!r.ok) {
+      const text = await r.text().catch(() => "");
+      return res
+        .status(r.status)
+        .json({ ok: false, source: "openai", error: text || "OpenAI error" });
+    }
+
+    const j = await r.json();
+    const content = j?.choices?.[0]?.message?.content ?? "{}";
+    let analysis: any = {};
+    try {
+      analysis = JSON.parse(content);
+    } catch {
+      analysis = { summary: content };
+    }
+
+    return res.json({ ok: true, source: "openai", analysis });
+  } catch (err: any) {
+    const msg =
+      err?.name === "AbortError"
+        ? "AI request timed out"
+        : err?.message || "AI analysis failed";
+    console.error("AI analyze error:", err);
+    return res.status(500).json({ ok: false, error: msg });
   }
 });
 

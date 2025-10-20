@@ -17,6 +17,7 @@ import {
   type AIIndicators,
   type AIPayload,
 } from "./lib/aiPayload";
+import { analyzeStock, type AIAnalysis } from "./services/ai";
 
 // ---- types ----
 export type TickerQuote = {
@@ -70,6 +71,9 @@ export default function StockSearchApp() {
   const [news, setNews] = useState<any[] | null>(null);
   const [indicators, setIndicators] = useState<AIIndicators | null>(null);
   const [aiPayload, setAiPayload] = useState<AIPayload | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiResult, setAiResult] = useState<null | AIAnalysis["analysis"]>(null);
 
   const [yearStats, setYearStats] = useState<{
     high: number;
@@ -84,7 +88,7 @@ export default function StockSearchApp() {
     const nextTicker = ticker.trim().toUpperCase();
     if (!nextTicker) return;
     setSubmitted(true);
-    setAiPayload(null);  
+    setAiPayload(null);
     setSymbol(nextTicker);
   }
 
@@ -220,7 +224,7 @@ export default function StockSearchApp() {
       })
     );
   }, [
-    symbol, // <-- use symbol, not ticker
+    symbol,
     chartData,
     quote,
     details,
@@ -230,6 +234,42 @@ export default function StockSearchApp() {
     indicators,
     news,
   ]);
+
+  // Fire AI only when the committed symbol's payload is ready
+  useEffect(() => {
+    if (!symbol || !aiPayload) return;
+
+    // optional: basic guard to ensure we have enough price points
+    if (
+      !Array.isArray(aiPayload.series?.points) ||
+      aiPayload.series.points.length < 60
+    )
+      return;
+
+    let cancelled = false;
+    (async () => {
+      setAiLoading(true);
+      setAiError(null);
+      setAiResult(null);
+      const res = await analyzeStock(aiPayload);
+      if (cancelled) return;
+
+      if (!res.ok) {
+        setAiError(res.error || "AI analysis failed");
+        setAiLoading(false);
+        return;
+      }
+
+      setAiResult(res.analysis ?? null);
+      console.log("AI result", res.analysis);
+      setAiLoading(false);
+    })();
+
+    // if user searches a new symbol mid-flight, ignore late result
+    return () => {
+      cancelled = true;
+    };
+  }, [symbol, aiPayload]);
 
   const up = !!quote && quote.change >= 0;
 
@@ -332,25 +372,482 @@ export default function StockSearchApp() {
             className="relative z-0 pt-30 pb-24"
           >
             <div className="mx-auto max-w-6xl px-4 md:px-6 grid gap-6 md:gap-8 md:grid-cols-3">
-              {/* AI Analysis */}
-              <Card variant="outlined" className="md:col-span-3">
-                <h3 className="text-base md:text-lg font-semibold mb-1">
-                  AI analysis
-                </h3>
-                <p className="text-sm text-gray-500">
-                  Coming soon — plug in your model/agent here.
-                </p>
-              </Card>
-              {aiPayload && (
-                <Card variant="outlined" className="md:col-span-3">
-                  <h3 className="text-base md:text-lg font-semibold mb-2">
-                    AI payload (debug)
-                  </h3>
-                  <pre className="text-xs whitespace-pre-wrap break-all max-h-64 overflow-auto">
-                    {JSON.stringify(aiPayload, null, 2)}
-                  </pre>
-                </Card>
-              )}
+              {/* ============== AI ANALYSIS — EMPHASIZED ============== */}
+              <section className="md:col-span-3 relative rounded-2xl p-[1px]">
+                {/* gradient accent frame */}
+                <div
+                  className="absolute -inset-[1px] rounded-2xl pointer-events-none opacity-70"
+                  style={{
+                    background:
+                      "linear-gradient(120deg, rgba(59,130,246,0.35), rgba(16,185,129,0.35), rgba(244,63,94,0.35))",
+                    WebkitMask:
+                      "linear-gradient(#000,#000) content-box, linear-gradient(#000,#000)",
+                    WebkitMaskComposite: "xor",
+                    padding: 1,
+                  }}
+                />
+                {/* frosted panel */}
+                <div className="relative overflow-hidden rounded-2xl backdrop-blur-md bg-gradient-to-br from-white/90 to-white/60 border border-slate-200 shadow-[0_8px_30px_rgba(0,0,0,0.06)] p-6">
+                  {/* tone helpers */}
+                  {/*
+      Map stance → color tone. Feel free to move these into a util.
+    */}
+                  {(() => {
+                    const stance =
+                      aiResult?.stance?.toLowerCase?.() || "neutral";
+                    const tone = stance.includes("bull")
+                      ? "emerald"
+                      : stance.includes("bear")
+                        ? "rose"
+                        : "amber";
+
+                    const toneClasses = {
+                      pill: {
+                        emerald:
+                          "bg-emerald-50 text-emerald-700 ring-emerald-200",
+                        rose: "bg-rose-50 text-rose-700 ring-rose-200",
+                        amber: "bg-amber-50 text-amber-700 ring-amber-200",
+                      }[tone]!,
+                      bar: {
+                        emerald: "from-emerald-500 to-emerald-600",
+                        rose: "from-rose-500 to-rose-600",
+                        amber: "from-amber-500 to-amber-600",
+                      }[tone]!,
+                      dot: {
+                        emerald: "bg-emerald-400",
+                        rose: "bg-rose-400",
+                        amber: "bg-amber-400",
+                      }[tone]!,
+                    };
+
+                    const confidencePct = Math.round(
+                      (aiResult?.confidence ?? 0) * 100
+                    );
+
+                    return (
+                      <>
+                        {/* Header */}
+                        <div className="mb-4 flex items-center justify-between gap-3">
+                          <h3 className="text-xl md:text-2xl font-semibold tracking-tight text-slate-900">
+                            AI Analysis
+                          </h3>
+
+                          {/* stance pill */}
+                          {!aiLoading && !aiError && aiResult && (
+                            <span
+                              className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium ring-1 ${toneClasses.pill}`}
+                            >
+                              <span
+                                className={`h-2 w-2 rounded-full ${toneClasses.dot}`}
+                              />
+                              {aiResult.stance ?? "Neutral"}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* LOADING — shimmer aligned to final layout */}
+                        {aiLoading && (
+                          <div className="space-y-4">
+                            {/* Summary skeleton */}
+                            <div className="h-5 w-40 rounded-md bg-slate-200 shimmer-light" />
+                            <div className="h-4 w-11/12 rounded-md bg-slate-200 shimmer-light" />
+                            <div className="h-4 w-10/12 rounded-md bg-slate-200 shimmer-light" />
+                            <div className="h-4 w-8/12 rounded-md bg-slate-200 shimmer-light" />
+
+                            {/* 3-col skeleton */}
+                            <div className="grid md:grid-cols-3 gap-4 pt-2">
+                              <div className="h-20 rounded-md bg-slate-200 shimmer-light" />
+                              <div className="h-20 rounded-md bg-slate-200 shimmer-light" />
+                              <div className="h-20 rounded-md bg-slate-200 shimmer-light" />
+                            </div>
+
+                            <style>{`
+                @keyframes shimmerLight { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+                .shimmer-light{
+                  position:relative; overflow:hidden;
+                  background-image:linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.6) 50%, rgba(255,255,255,0) 100%);
+                  background-size:200% 100%; animation:shimmerLight 1.8s infinite;
+                }
+              `}</style>
+                          </div>
+                        )}
+
+                        {/* ERROR */}
+                        {!aiLoading && aiError && (
+                          <div className="rounded-lg border border-rose-200 bg-rose-50 text-rose-700 p-4">
+                            {aiError}
+                          </div>
+                        )}
+
+                        {/* CONTENT */}
+                        {!aiLoading && !aiError && aiResult && (
+                          <div className="space-y-6">
+                            {/* ===== Top: Summary + confidence ===== */}
+                            <div>
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                                  {aiResult.confidence != null
+                                    ? `${confidencePct}% confidence`
+                                    : "—"}
+                                </div>
+                                {/* confidence bar */}
+                                <div className="w-48 h-2 rounded-full bg-slate-200/80 overflow-hidden">
+                                  <div
+                                    className={`h-full bg-gradient-to-r ${toneClasses.bar}`}
+                                    style={{ width: `${confidencePct}%` }}
+                                  />
+                                </div>
+                              </div>
+
+                              <p className="mt-3 text-[15px] md:text-[16px] text-slate-900 leading-6 font-medium">
+                                {aiResult.summary}
+                              </p>
+
+                              {Array.isArray(aiResult.highlights) &&
+                                aiResult.highlights.length > 0 && (
+                                  <ul className="mt-2 flex flex-wrap gap-2">
+                                    {aiResult.highlights.map((h, i) => (
+                                      <li
+                                        key={i}
+                                        className="px-2.5 py-1 rounded-full text-xs bg-slate-100 text-slate-700 border border-slate-200"
+                                      >
+                                        {h}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+
+                              {/* Optional: supports / resistances small line */}
+                              {aiResult.technical && (
+                                <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                                  <div className="text-slate-700">
+                                    <div className="text-[11px] font-medium text-slate-500 mb-1">
+                                      Supports
+                                    </div>
+                                    {(aiResult.technical.supports ?? []).join(
+                                      ", "
+                                    ) || "—"}
+                                  </div>
+                                  <div className="text-slate-700">
+                                    <div className="text-[11px] font-medium text-slate-500 mb-1">
+                                      Resistances
+                                    </div>
+                                    {(
+                                      aiResult.technical.resistances ?? []
+                                    ).join(", ") || "—"}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* ===== Bottom: 3 columns (chips) ===== */}
+                            <div className="grid md:grid-cols-3 gap-4">
+                              {/* Actions */}
+                              <div>
+                                <div className="text-[11px] font-medium text-slate-500 mb-1">
+                                  Actions
+                                </div>
+                                {Array.isArray(aiResult.actions) &&
+                                aiResult.actions.length > 0 ? (
+                                  <ul className="flex flex-wrap gap-2">
+                                    {aiResult.actions.map((a, i) => (
+                                      <li
+                                        key={i}
+                                        className="px-2.5 py-1 rounded-lg text-xs bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                      >
+                                        {a}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                ) : (
+                                  <div className="text-sm text-slate-400 italic">
+                                    —
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Risks */}
+                              <div>
+                                <div className="text-[11px] font-medium text-slate-500 mb-1">
+                                  Risks
+                                </div>
+                                {Array.isArray(aiResult.risks) &&
+                                aiResult.risks.length > 0 ? (
+                                  <ul className="flex flex-wrap gap-2">
+                                    {aiResult.risks.map((r, i) => (
+                                      <li
+                                        key={i}
+                                        className="px-2.5 py-1 rounded-lg text-xs bg-amber-50 text-amber-800 border border-amber-300"
+                                      >
+                                        {r}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                ) : (
+                                  <div className="text-sm text-slate-400 italic">
+                                    —
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Disclaimers + Horizon */}
+                              <div>
+                                <div className="text-[11px] font-medium text-slate-500 mb-1">
+                                  Disclaimers
+                                </div>
+                                {Array.isArray(aiResult.disclaimers) &&
+                                aiResult.disclaimers.length > 0 ? (
+                                  <ul className="flex flex-wrap gap-2">
+                                    {aiResult.disclaimers.map((d, i) => (
+                                      <li
+                                        key={i}
+                                        className="px-2.5 py-1 rounded-lg text-xs bg-slate-100 text-slate-700 border border-slate-200"
+                                      >
+                                        {d}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                ) : (
+                                  <div className="text-sm text-slate-400 italic">
+                                    —
+                                  </div>
+                                )}
+                                <div className="mt-2 text-[11px] text-slate-500">
+                                  Horizon:{" "}
+                                  <span className="text-slate-700">
+                                    {aiResult.horizon || "—"}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                            {/* ===== Why this makes sense financially ===== */}
+                            {Array.isArray(aiResult.rationale_long) &&
+                              aiResult.rationale_long.length > 0 && (
+                                <div className="space-y-2">
+                                  <h4 className="text-sm font-semibold text-slate-900">
+                                    Why this makes sense financially
+                                  </h4>
+                                  {aiResult.rationale_long.map((p, i) => (
+                                    <p
+                                      key={i}
+                                      className="text-sm text-slate-700 leading-6"
+                                    >
+                                      {p}
+                                    </p>
+                                  ))}
+                                </div>
+                              )}
+
+                            {/* ===== Scenario analysis ===== */}
+                            {aiResult.scenarios && (
+                              <div className="pt-2">
+                                <h4 className="text-sm font-semibold text-slate-900 mb-2">
+                                  Scenario analysis
+                                </h4>
+                                <div className="flex flex-wrap gap-2 text-xs">
+                                  {(["bull", "base", "bear"] as const).map(
+                                    (k) => {
+                                      const s = (aiResult.scenarios as any)?.[
+                                        k
+                                      ];
+                                      if (!s) return null;
+                                      return (
+                                        <div
+                                          key={k}
+                                          className="rounded-lg border border-slate-200 px-3 py-2 bg-white"
+                                        >
+                                          <div className="font-medium capitalize">
+                                            {k}
+                                          </div>
+                                          <div className="text-slate-600">
+                                            {s.prob != null && (
+                                              <span className="mr-2">
+                                                {Math.round(s.prob * 100)}%
+                                              </span>
+                                            )}
+                                            {s.target && (
+                                              <span className="mr-2">
+                                                target {s.target}
+                                              </span>
+                                            )}
+                                          </div>
+                                          {Array.isArray(s.drivers) &&
+                                            s.drivers.length > 0 && (
+                                              <ul className="mt-1 list-disc pl-5 text-slate-700">
+                                                {s.drivers.map(
+                                                  (d: string, i: number) => (
+                                                    <li key={i}>{d}</li>
+                                                  )
+                                                )}
+                                              </ul>
+                                            )}
+                                        </div>
+                                      );
+                                    }
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* ===== Valuation ===== */}
+                            {aiResult.valuation && (
+                              <div className="pt-2">
+                                <h4 className="text-sm font-semibold text-slate-900 mb-2">
+                                  Valuation snapshot
+                                </h4>
+                                {Array.isArray(aiResult.valuation.multiples) &&
+                                  aiResult.valuation.multiples.length > 0 && (
+                                    <div className="overflow-x-auto">
+                                      <table className="min-w-[420px] text-sm">
+                                        <thead className="text-slate-500">
+                                          <tr>
+                                            <th className="text-left pr-4 py-1">
+                                              Multiple
+                                            </th>
+                                            <th className="text-left pr-4">
+                                              Value
+                                            </th>
+                                            <th className="text-left">
+                                              Peer range
+                                            </th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="text-slate-800">
+                                          {aiResult.valuation.multiples.map(
+                                            (m, i) => (
+                                              <tr key={i}>
+                                                <td className="pr-4 py-1">
+                                                  {m.name}
+                                                </td>
+                                                <td className="pr-4">
+                                                  {m.value}
+                                                </td>
+                                                <td>{m.peer_range ?? "—"}</td>
+                                              </tr>
+                                            )
+                                          )}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  )}
+                                {Array.isArray(aiResult.valuation.notes) &&
+                                  aiResult.valuation.notes.length > 0 && (
+                                    <ul className="mt-2 list-disc pl-5 text-slate-700">
+                                      {aiResult.valuation.notes.map((n, i) => (
+                                        <li key={i}>{n}</li>
+                                      ))}
+                                    </ul>
+                                  )}
+                              </div>
+                            )}
+
+                            {/* ===== Trading playbook ===== */}
+                            {aiResult.playbook && (
+                              <div className="pt-2">
+                                <h4 className="text-sm font-semibold text-slate-900 mb-2">
+                                  Trading playbook
+                                </h4>
+                                <div className="text-sm text-slate-800 grid sm:grid-cols-2 gap-x-6 gap-y-1">
+                                  {aiResult.playbook.entry && (
+                                    <div>
+                                      <span className="text-slate-500">
+                                        Entry:{" "}
+                                      </span>
+                                      {aiResult.playbook.entry}
+                                    </div>
+                                  )}
+                                  {Array.isArray(aiResult.playbook.exits) &&
+                                    aiResult.playbook.exits.length > 0 && (
+                                      <div>
+                                        <span className="text-slate-500">
+                                          Exits:{" "}
+                                        </span>
+                                        {aiResult.playbook.exits.join(", ")}
+                                      </div>
+                                    )}
+                                  {aiResult.playbook.invalidation && (
+                                    <div>
+                                      <span className="text-slate-500">
+                                        Invalidation:{" "}
+                                      </span>
+                                      {aiResult.playbook.invalidation}
+                                    </div>
+                                  )}
+                                  {aiResult.playbook.position && (
+                                    <div>
+                                      <span className="text-slate-500">
+                                        Position:{" "}
+                                      </span>
+                                      {aiResult.playbook.position}
+                                    </div>
+                                  )}
+                                  {aiResult.playbook.timeframe && (
+                                    <div>
+                                      <span className="text-slate-500">
+                                        Timeframe:{" "}
+                                      </span>
+                                      {aiResult.playbook.timeframe}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* ===== What to watch ===== */}
+                            {Array.isArray(aiResult.watchlist) &&
+                              aiResult.watchlist.length > 0 && (
+                                <div className="pt-2">
+                                  <h4 className="text-sm font-semibold text-slate-900 mb-2">
+                                    What to watch
+                                  </h4>
+                                  <ul className="flex flex-wrap gap-2">
+                                    {aiResult.watchlist.map((w, i) => (
+                                      <li
+                                        key={i}
+                                        className="px-2.5 py-1 rounded-lg text-xs bg-indigo-50 text-indigo-700 border border-indigo-200"
+                                      >
+                                        {w}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+
+                            {/* ===== Confidence notes / Data used ===== */}
+                            {Array.isArray(aiResult.confidence_notes) &&
+                              aiResult.confidence_notes.length > 0 && (
+                                <div className="pt-2">
+                                  <h4 className="text-sm font-semibold text-slate-900 mb-2">
+                                    Confidence notes
+                                  </h4>
+                                  <ul className="list-disc pl-5 text-sm text-slate-700">
+                                    {aiResult.confidence_notes.map((c, i) => (
+                                      <li key={i}>{c}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                            {Array.isArray(aiResult.data_used) &&
+                              aiResult.data_used.length > 0 && (
+                                <div className="pt-2">
+                                  <h4 className="text-sm font-semibold text-slate-900 mb-2">
+                                    Data considered
+                                  </h4>
+                                  <ul className="list-disc pl-5 text-sm text-slate-700">
+                                    {aiResult.data_used.map((d, i) => (
+                                      <li key={i}>{d}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
+              </section>
+
               {/* LEFT */}
               <section className="md:col-span-2 grid gap-6">
                 {/* Price card */}
