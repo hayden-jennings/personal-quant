@@ -12,8 +12,11 @@ import {
 import type { TickerDetails as PolyDetails } from "./services/polygon";
 import search from "./assets/search.svg";
 import { summarizeIndicators } from "./lib/indicators";
-
-/** stock-search — Single Page App */
+import {
+  buildAIPayload,
+  type AIIndicators,
+  type AIPayload,
+} from "./lib/aiPayload";
 
 // ---- types ----
 export type TickerQuote = {
@@ -65,7 +68,8 @@ export default function StockSearchApp() {
   const [chartData, setChartData] = useState<{ t: number; y: number }[]>([]);
   const [details, setDetails] = useState<PolyDetails | null>(null);
   const [news, setNews] = useState<any[] | null>(null);
-  const [indicators, setIndicators] = useState<any | null>(null);
+  const [indicators, setIndicators] = useState<AIIndicators | null>(null);
+  const [aiPayload, setAiPayload] = useState<AIPayload | null>(null);
 
   const [yearStats, setYearStats] = useState<{
     high: number;
@@ -80,6 +84,7 @@ export default function StockSearchApp() {
     const nextTicker = ticker.trim().toUpperCase();
     if (!nextTicker) return;
     setSubmitted(true);
+    setAiPayload(null);  
     setSymbol(nextTicker);
   }
 
@@ -184,6 +189,47 @@ export default function StockSearchApp() {
       }
     })();
   }, [symbol]);
+
+  useEffect(() => {
+    if (!symbol || !chartData.length || !quote || !indicators) {
+      setAiPayload(null);
+      return;
+    }
+    const nowISO = new Date().toISOString();
+    setAiPayload(
+      buildAIPayload({
+        ticker: symbol, // <-- committed symbol
+        nowISO,
+        quote: {
+          price: quote.price,
+          change: quote.change,
+          changePct: quote.changePct,
+          dayHigh: quote.dayHigh,
+          dayLow: quote.dayLow,
+          prevClose: quote.prevClose,
+          volume: quote.volume,
+          currency: quote.currency,
+        },
+        details,
+        yearStats,
+        oneYearReturn,
+        avgVolume,
+        indicators,
+        chartData,
+        news: news ?? [],
+      })
+    );
+  }, [
+    symbol, // <-- use symbol, not ticker
+    chartData,
+    quote,
+    details,
+    yearStats,
+    oneYearReturn,
+    avgVolume,
+    indicators,
+    news,
+  ]);
 
   const up = !!quote && quote.change >= 0;
 
@@ -295,7 +341,16 @@ export default function StockSearchApp() {
                   Coming soon — plug in your model/agent here.
                 </p>
               </Card>
-
+              {aiPayload && (
+                <Card variant="outlined" className="md:col-span-3">
+                  <h3 className="text-base md:text-lg font-semibold mb-2">
+                    AI payload (debug)
+                  </h3>
+                  <pre className="text-xs whitespace-pre-wrap break-all max-h-64 overflow-auto">
+                    {JSON.stringify(aiPayload, null, 2)}
+                  </pre>
+                </Card>
+              )}
               {/* LEFT */}
               <section className="md:col-span-2 grid gap-6">
                 {/* Price card */}
