@@ -299,8 +299,8 @@ export default function StockSearchApp() {
                     <div className="flex items-center gap-3">
                       {symbol ? (
                         <img
-                          src={symbol ? logoUrlFor(symbol) : undefined}
-                          alt={`${details?.name ?? symbol ?? ""} logo`}
+                          src={logoUrlFor(symbol)}
+                          alt={`${details?.name ?? symbol} logo`}
                           className="h-8 w-8 object-contain"
                           onError={(e) => {
                             (
@@ -312,13 +312,14 @@ export default function StockSearchApp() {
 
                       <div>
                         <div className="text-sm text-gray-500">
-                          {symbol ?? "TICKER"}
+                          {quote ? quote.symbol : (symbol ?? "TICKER")}
                         </div>
                         <div className="text-xl md:text-2xl font-semibold">
-                          {details?.name ?? symbol ?? "—"}
+                          {quote ? quote.name : (symbol ?? "—")}
                         </div>
                       </div>
                     </div>
+
                     <div className="text-right">
                       <div className="text-2xl md:text-4xl font-bold text-gray-900 leading-none">
                         {quote ? fmt.usd(quote.price) : "—"}
@@ -326,7 +327,9 @@ export default function StockSearchApp() {
                       <div
                         className={
                           "mt-1 inline-flex items-center gap-2 py-1 text-sm " +
-                          (up ? "text-emerald-700" : "text-rose-700")
+                          (!!quote && quote.change >= 0
+                            ? "text-emerald-700"
+                            : "text-rose-700")
                         }
                         title="Change since open"
                       >
