@@ -11,6 +11,7 @@ import {
 } from "./services/polygon";
 import type { TickerDetails as PolyDetails } from "./services/polygon";
 import search from "./assets/search.svg";
+import { summarizeIndicators } from "./lib/indicators";
 
 /** stock-search — Single Page App */
 
@@ -64,6 +65,7 @@ export default function StockSearchApp() {
   const [chartData, setChartData] = useState<{ t: number; y: number }[]>([]);
   const [details, setDetails] = useState<PolyDetails | null>(null);
   const [news, setNews] = useState<any[] | null>(null);
+  const [indicators, setIndicators] = useState<any | null>(null);
 
   const [yearStats, setYearStats] = useState<{
     high: number;
@@ -133,6 +135,9 @@ export default function StockSearchApp() {
 
         const all = rows.map((r: any) => ({ t: r.t ?? r.timestamp, y: r.c }));
         setChartData(all);
+
+        const closes = all.map((p) => p.y);
+        setIndicators(summarizeIndicators(closes));
       } catch {
         setYearStats(null);
         setOneYearReturn(null);
