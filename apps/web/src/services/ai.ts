@@ -96,3 +96,63 @@ export async function analyzeStock(payload: any): Promise<AIAnalysis> {
     clearTimeout(t);
   }
 }
+
+// apps/web/src/services/ai.ts
+export async function analyzeStockStream(
+  payload: any,
+  onDelta?: (t: string) => void
+): Promise<AIAnalysis> {
+  try {
+    const r = await fetch(`${API_BASE}/api/ai/analyze/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!r.ok || !r.body) {
+      return { ok: false, error: `AI stream error ${r.status}` };
+    }
+
+    // Read SSE lines
+    const reader = r.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let finalJson = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      // process complete SSE events
+      const events = buffer.split("\n\n");
+      buffer = events.pop() || "";
+      for (const evt of events) {
+        if (!evt.startsWith("event:")) continue;
+        const lines = evt.split("\n");
+        const ev = lines[0].replace("event: ", "").trim();
+        const data = lines[1]?.replace("data: ", "") ?? "";
+
+        if (ev === "chunk") {
+          const token = JSON.parse(data); // this is the raw text delta
+          onDelta?.(token);
+        } else if (ev === "done") {
+          finalJson = JSON.parse(data); // the full JSON string
+        } else if (ev === "error") {
+          return { ok: false, error: JSON.parse(data) };
+        }
+      }
+    }
+
+    // parse final JSON into AIAnalysis.analysis
+    let analysis: any = {};
+    try {
+      analysis = JSON.parse(finalJson);
+    } catch {
+      analysis = { summary: finalJson };
+    }
+    return { ok: true, source: "openai", analysis };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || "Network error" };
+  }
+}

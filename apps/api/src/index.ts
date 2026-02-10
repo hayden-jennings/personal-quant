@@ -2,6 +2,11 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 
+import OpenAI from "openai";
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
+
 const app = express();
 const PORT = process.env.PORT || 8787;
 
@@ -183,16 +188,16 @@ app.post("/api/ai/analyze", async (req, res) => {
         Required:
         - stance: "bullish" | "bearish" | "neutral"
         - confidence: number (0..1)
-        - summary: 3-5 sentences
+        - summary: 2-3 sentences
         - highlights: string[]
         - technical: { supports: string[], resistances: string[], signals: { name: string, status: string }[] }
-        - actions: string[] (1–5 bullets)
-        - risks: string[] (1–5 bullets)
+        - actions: string[] (1–3 bullets)
+        - risks: string[] (1–3 bullets)
         - horizon: string
         - disclaimers: string[]
 
-        Optional (include when useful to justify actions financially):
-        - rationale_long: string[] (2–6 short paragraphs; plain text, no markdown)
+        (include when useful to justify actions financially):
+        - rationale_long: string[] (2–4 short paragraphs; plain text, no markdown)
         - scenarios: {
             bull?: { prob?: number (0..1), target?: string, drivers?: string[] },
             base?: { prob?: number, target?: string, drivers?: string[] },
@@ -256,6 +261,114 @@ app.post("/api/ai/analyze", async (req, res) => {
         : err?.message || "AI analysis failed";
     console.error("AI analyze error:", err);
     return res.status(500).json({ ok: false, error: msg });
+  }
+});
+
+app.post("/api/ai/analyze/stream", async (req, res) => {
+  try {
+    const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+    if (!OPENAI_API_KEY) {
+      return res
+        .status(503)
+        .end("event: error\ndata: Missing OPENAI_API_KEY\n\n");
+    }
+
+    // same trimming you already do
+    const raw = (req.body ?? {}) as any;
+    const trimmed = {
+      ...raw,
+      series: raw?.series
+        ? {
+            ...raw.series,
+            points: Array.isArray(raw.series.points)
+              ? raw.series.points.slice(-300)
+              : [],
+          }
+        : undefined,
+    };
+
+    // Prepare messages (reuse the richer prompt from Part 1.2)
+    const messages: ChatCompletionMessageParam[] = [
+      {
+        role: "system",
+        content:
+          "You are a cautious, concise-but-thorough equities analyst. Provide clear caveats, quantify when possible, avoid certainty.",
+      },
+      {
+        role: "user",
+        content: `Analyze the following stock snapshot and return structured JSON.
+Required:
+- stance: "bullish" | "bearish" | "neutral"
+- confidence: number (0..1)
+- summary: 3-5 sentences
+- highlights: string[]
+- technical: { supports: string[], resistances: string[], signals: { name: string, status: string }[] }
+- actions: string[] (1–5 bullets)
+- risks: string[] (1–5 bullets)
+- horizon: string
+- disclaimers: string[]
+
+Optional (include when useful to justify actions financially):
+- rationale_long: string[] (2–6 short paragraphs; plain text, no markdown)
+- scenarios: {
+    bull?: { prob?: number (0..1), target?: string, drivers?: string[] },
+    base?: { prob?: number, target?: string, drivers?: string[] },
+    bear?: { prob?: number, target?: string, drivers?: string[] }
+  }
+- valuation: {
+    multiples?: { name: string, value: string, peer_range?: string }[],
+    notes?: string[]
+  }
+- playbook?: {
+    entry?: string, exits?: string[], invalidation?: string,
+    position?: string, timeframe?: string
+  }
+- watchlist?: string[]  // signals/events to monitor
+- confidence_notes?: string[]
+- data_used?: string[]  // what key inputs you used
+
+Snapshot JSON:
+${JSON.stringify(trimmed)}`,
+      },
+    ];
+
+    // SSE headers
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+
+    // Kick off streaming with the SDK (Chat Completions with stream)
+    const stream = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages,
+      temperature: 0.2,
+      stream: true,
+      // response_format: { type: "json_object" }, // ⟵ remove if types complain
+    });
+
+    let full = "";
+
+    for await (const part of stream) {
+      const delta = part.choices?.[0]?.delta?.content ?? "";
+      if (delta) {
+        full += delta;
+        // forward token(s) to client
+        res.write(`event: chunk\ndata: ${JSON.stringify(delta)}\n\n`);
+      }
+    }
+
+    // done
+    res.write(`event: done\ndata: ${JSON.stringify(full)}\n\n`);
+    res.end();
+  } catch (err: any) {
+    console.error("AI analyze stream error:", err);
+    // try to notify client via SSE error event
+    try {
+      res.write(
+        `event: error\ndata: ${JSON.stringify(err?.message ?? "stream error")}\n\n`
+      );
+      res.end();
+    } catch {}
   }
 });
 

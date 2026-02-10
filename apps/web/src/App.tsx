@@ -17,7 +17,11 @@ import {
   type AIIndicators,
   type AIPayload,
 } from "./lib/aiPayload";
-import { analyzeStock, type AIAnalysis } from "./services/ai";
+import {
+  analyzeStock,
+  analyzeStockStream,
+  type AIAnalysis,
+} from "./services/ai";
 
 // ---- types ----
 export type TickerQuote = {
